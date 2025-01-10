@@ -40,6 +40,7 @@ func GetClient(uri string) (*azblob.Client, error) {
 		return nil, err
 	}
 	accountName := strings.Split(parts.Host, ".")[0]
+	accountUrl := fmt.Sprintf("%s%s", parts.Scheme, parts.Host)
 
 	accountKey := os.Getenv("AZURE_STORAGE_ACCESS_KEY")
 	if len(accountKey) == 0 {
@@ -47,13 +48,14 @@ func GetClient(uri string) (*azblob.Client, error) {
 		if err != nil {
 			return nil, err
 		}
+		accountUrl := fmt.Sprintf("%s%s", parts.Scheme, parts.Host)
 		return azblob.NewClient(uri, credential, nil)
 	}
 	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
 	if err != nil {
 		return nil, err
 	}
-	return azblob.NewClientWithSharedKeyCredential(uri, credential, nil)
+	return azblob.NewClientWithSharedKeyCredential(accountUrl, credential, nil)
 }
 
 // Download context file from given azure blob storage url and unpack it to BuildContextDir
