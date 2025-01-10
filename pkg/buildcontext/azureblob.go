@@ -18,11 +18,11 @@ package buildcontext
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	kConfig "github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/constants"
@@ -34,24 +34,37 @@ type AzureBlob struct {
 	context string
 }
 
-// Download context file from given azure blob storage url and unpack it to BuildContextDir
-func (b *AzureBlob) UnpackTarFromBuildContext() (string, error) {
+func GetClient(uri string) (*azblob.Client, error) {
+	parts, err := azblob.ParseURL(uri)
+	if err != nil {
+		return nil, err
+	}
+	accountName := strings.Split(parts.Host, ".")[0]
 
-	// Get Azure_STORAGE_ACCESS_KEY from environment variables
 	accountKey := os.Getenv("AZURE_STORAGE_ACCESS_KEY")
 	if len(accountKey) == 0 {
-		return "", errors.New("AZURE_STORAGE_ACCESS_KEY environment variable is not set")
+		credential, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, err
+		}
+		return azblob.NewClient(uri, credential, nil)
 	}
+	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+	if err != nil {
+		return nil, err
+	}
+	return azblob.NewClientWithSharedKeyCredential(uri, credential, nil)
+}
 
+// Download context file from given azure blob storage url and unpack it to BuildContextDir
+func (b *AzureBlob) UnpackTarFromBuildContext() (string, error) {
 	// Get storage accountName for Azure Blob Storage
 	parts, err := azblob.ParseURL(b.context)
 	if err != nil {
 		return parts.Host, err
 	}
-	accountName := strings.Split(parts.Host, ".")[0]
 
-	// Generate credential with accountName and accountKey
-	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+	client, err := GetClient(b.context)
 	if err != nil {
 		return parts.Host, err
 	}
@@ -64,11 +77,6 @@ func (b *AzureBlob) UnpackTarFromBuildContext() (string, error) {
 		return tarPath, err
 	}
 
-	// Downloading context file from Azure Blob Storage
-	client, err := azblob.NewClientWithSharedKeyCredential(b.context, credential, nil)
-	if err != nil {
-		return parts.Host, err
-	}
 	ctx := context.Background()
 
 	if _, err := client.DownloadFile(ctx, parts.ContainerName, parts.BlobName, file, nil); err != nil {
